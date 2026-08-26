@@ -6,7 +6,7 @@ import feedparser
 from bs4 import BeautifulSoup
 
 # --- НАСТРОЙКИ ---
-TOKEN = 'ТВОЙ_ТОКЕН_БОТА' # Вставь свой токен!
+TOKEN = '8043800793:AAG7CPL1aDMxYC9Z0Wr9x92y9h9oqQhsRYY' # Вставь свой токен!
 CHANNEL_NAME = '@highconcrete_news'
 # -----------------
 
