@@ -4,73 +4,76 @@ import random
 import requests
 import feedparser
 from bs4 import BeautifulSoup
-import io
 
-# НАСТРОЙКИ
+# --- НАСТРОЙКИ ---
 TOKEN = '8043800793:AAG7CPL1aDMxYC9Z0Wr9x92y9h9oqQhsRYY'
 CHANNEL_NAME = '@highconcrete_news'
-SHEET_URL = 'https://docs.google.com/spreadsheets/d/1znszruyFQu9AuXpe196rtBfLYB86MfFbnhZpSMsxgxE/export?format=csv&gid=0'
+# -----------------
 
 bot = telebot.TeleBot(TOKEN)
+
+# RSS-ссылки (новости)
 RSS_FEEDS = ['https://dwg.ru/rss', 'https://archi.ru/rss/news.xml']
 
+# Выжимка по терраццо
+TERRAZZO_DOCS = [
+    {"title": "Рецептуры для столешниц (Direct Cast)", "desc": "Бесплатные рецептуры (объёмные пропорции) с AR-стекловолокном.", "url": "https://concretecountertopinstitute.com/free-training/concrete-countertop-mix-recipes/"},
+    {"title": "Спецификация NTMA: Epoxy Terrazzo", "desc": "Актуальная спецификация по эпоксидному терраццо. Требования к основанию, пропорции, допуски.", "url": "https://ntma.com/wp-content/uploads/2024/01/Epoxy-Terrazzo-modified-11-20-23.pdf"},
+    {"title": "Советские стандарты: мозаичные покрытия", "desc": "ТТК на мозаичное покрытие: состав смеси, укладка, уход.", "url": "https://www.zavodsz.ru/files/gost/TTK_%20Proizvodstvo%20rabot%20po%20ustrojstvu%20mozaichnogo%20pokrytiya%20pola.pdf"},
+    {"title": "Технология GFRC для тонкостенных изделий", "desc": "GFRC-рецептура для раковин и мебели. Бэкерный слой 10–12 мм.", "url": "https://www.expressions-ltd.com/pages/gfrc-mix-recipe"}
+]
+
 def fetch_and_post():
-    print("Начинаю работу скрипта...")
-    content_type = random.choice([1, 2])
-    print(f"Выбран тип контента: {content_type}")
+    content_type = random.choice([1, 2, 3])
     
     if content_type == 1:
         print("Пытаюсь взять новость из RSS...")
         feed_url = random.choice(RSS_FEEDS)
         feed = feedparser.parse(feed_url)
+        
+        # --- ТОТ САМЫЙ ПРЕДОХРАНИТЕЛЬ ---
+        if not feed.entries:
+            print(f"❌ RSS-лента {feed_url} пуста или недоступна. Бот отменяет публикацию, чтобы не сломаться.")
+            return # Тихо завершаем работу
+        # --------------------------------
+            
         entry = feed.entries[0]
-        post_text = f"**Индустрия и нормативы**\n\n*{entry.title}*\n\n[Читать подробнее]({entry.link})"
+        post_text = f"🏗 *Индустрия и тренды*\n\n*{entry.title}*\n\nСвежие сводки с рынка проектирования и архитектуры.\n\n🔗 [Читать источник]({entry.link})"
         bot.send_message(CHANNEL_NAME, text=post_text, parse_mode='Markdown')
-        print("Новость из RSS успешно отправлена!")
+        print("✅ Опубликована новость из RSS!")
 
     elif content_type == 2:
-        print("Пытаюсь прочитать Гугл Таблицу...")
-        response = requests.get(SHEET_URL)
-        response.encoding = 'utf-8'
-        text_data = response.text
-        
-        reader = list(csv.DictReader(io.StringIO(text_data)))
-        if not reader:
-            print("ОШИБКА: Таблица пустая или не удалось прочитать заголовки!")
-            return
-            
-        print(f"Заголовки в таблице: {reader[0].keys()}")
-        
-        # Ищем РФ, игнорируя случайные пробелы и регистр букв
-        ru_sites = []
-        for row in reader:
-            region_key = next((k for k in row.keys() if k and 'регион' in k.lower()), None)
-            if region_key and row.get(region_key) and 'рф' in row.get(region_key).lower():
-                ru_sites.append(row)
-        
-        print(f"Найдено сайтов РФ: {len(ru_sites)}")
-        
-        if not ru_sites:
-            print("ОШИБКА: Не найдено ни одной строки с регионом РФ! Выхожу.")
-            return
-            
-        site = random.choice(ru_sites)
-        print("Выбран сайт для публикации, пробую отправить...")
-        
+        # ФОРУМ ИЗ CSV
         try:
-            headers = {'User-Agent': 'Mozilla/5.0'}
-            site_resp = requests.get(site.get('Ссылка', ''), headers=headers, timeout=10)
-            soup = BeautifulSoup(site_resp.text, 'html.parser')
-            title = soup.title.string.strip() if soup.title else site.get('Категория', 'Форум')
+            ru_sites = []
+            with open('sites.csv', mode='r', encoding='utf-8') as file:
+                reader = csv.DictReader(file)
+                for row in reader:
+                    if row['Регион'] == 'РФ':
+                        ru_sites.append(row)
             
-            post_text = f"**{site.get('Категория', 'Форум')}**\n\n*{title}*\n\n{site.get('Описание', '')}\n\n[Перейти на площадку]({site.get('Ссылка', '')})"
+            if not ru_sites:
+                print("❌ Нет сайтов РФ в базе.")
+                return
+
+            site = random.choice(ru_sites)
+            headers = {'User-Agent': 'Mozilla/5.0'}
+            response = requests.get(site['Ссылка'], headers=headers, timeout=10)
+            soup = BeautifulSoup(response.text, 'html.parser')
+            title = soup.title.string.strip() if soup.title else site['Категория']
+            
+            post_text = f"💬 *Обсуждения и практика*\n\n*{title}*\n\n{site['Описание']}\n\n🔗 [Перейти на площадку]({site['Ссылка']})"
             bot.send_message(CHANNEL_NAME, text=post_text, parse_mode='Markdown')
-            print("Пост успешно отправлен!")
+            print("✅ Опубликован пост с форума/научной базы!")
         except Exception as e:
-            print(f"Отправляю текстовую заглушку. Ошибка парсинга: {e}")
-            post_text = f"**{site.get('Категория', 'Форум')}**\n\n*{site.get('Источник', '')}*\n\n{site.get('Описание', '')}\n\n[Перейти на площадку]({site.get('Ссылка', '')})"
-            bot.send_message(CHANNEL_NAME, text=post_text, parse_mode='Markdown')
-            print("Пост-заглушка успешно отправлен!")
+            print(f"❌ Ошибка базы сайтов: {e}")
+
+    elif content_type == 3:
+        # ТЕХКАРТА ТЕРРАЦЦО
+        doc = random.choice(TERRAZZO_DOCS)
+        post_text = f"🔬 *Технологии и рецептуры*\n\n*{doc['title']}*\n\n{doc['desc']}\n\n🔗 [Изучить документацию]({doc['url']})"
+        bot.send_message(CHANNEL_NAME, text=post_text, parse_mode='Markdown')
+        print("✅ Опубликована техкарта по терраццо!")
 
 if __name__ == '__main__':
     fetch_and_post()
