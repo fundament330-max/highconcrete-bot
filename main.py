@@ -6,16 +6,14 @@ import feedparser
 from bs4 import BeautifulSoup
 
 # --- НАСТРОЙКИ ---
-TOKEN = '8043800793:AAG7CPL1aDMxYC9Z0Wr9x92y9h9oqQhsRYY' # Вставь свой токен!
+TOKEN = 'ТВОЙ_ТОКЕН_БОТА' # Не забудь вставить свой токен!
 CHANNEL_NAME = '@highconcrete_news'
 # -----------------
 
 bot = telebot.TeleBot(TOKEN)
 
-# RSS-ссылки (новости)
 RSS_FEEDS = ['https://dwg.ru/rss', 'https://archi.ru/rss/news.xml']
 
-# Выжимка по терраццо (Добавили ссылки на фото)
 TERRAZZO_DOCS = [
     {"title": "Рецептуры для столешниц (Direct Cast)", "desc": "Бесплатные рецептуры (объёмные пропорции) с AR-стекловолокном.", "url": "https://concretecountertopinstitute.com/free-training/concrete-countertop-mix-recipes/", "img": "https://stroy-podskazka.ru/images/article/orig/2019/08/izgotovlenie-betonnoj-stoleshnicy-svoimi-rukami-5.jpg"},
     {"title": "Спецификация NTMA: Epoxy Terrazzo", "desc": "Актуальная спецификация по эпоксидному терраццо. Требования к основанию, пропорции, допуски.", "url": "https://ntma.com/wp-content/uploads/2024/01/Epoxy-Terrazzo-modified-11-20-23.pdf", "img": "https://www.terrazzco.com/wp-content/uploads/2017/04/Epoxy-Terrazzo-Design-1024x682.jpg"},
@@ -37,7 +35,6 @@ def fetch_and_post():
             
         entry = feed.entries[0]
         
-        # --- Ищем картинку в RSS ---
         image_url = None
         if 'enclosures' in entry and entry.enclosures:
             for enc in entry.enclosures:
@@ -50,10 +47,15 @@ def fetch_and_post():
         post_text = f"🏗 *Индустрия и тренды*\n\n*{entry.title}*\n\nСвежие сводки с рынка проектирования и архитектуры.\n\n🔗 [Читать источник]({entry.link})"
         
         if image_url:
-            bot.send_photo(CHANNEL_NAME, photo=image_url, caption=post_text, parse_mode='Markdown')
+            try:
+                bot.send_photo(CHANNEL_NAME, photo=image_url, caption=post_text, parse_mode='Markdown')
+                print("✅ Опубликована новость с фото!")
+            except Exception as e:
+                print(f"⚠️ Ошибка загрузки фото ({e}). Публикую текст.")
+                bot.send_message(CHANNEL_NAME, text=post_text, parse_mode='Markdown')
         else:
             bot.send_message(CHANNEL_NAME, text=post_text, parse_mode='Markdown')
-        print("✅ Опубликована новость из RSS!")
+            print("✅ Опубликована новость (текст)!")
 
     elif content_type == 2:
         try:
@@ -73,17 +75,21 @@ def fetch_and_post():
             soup = BeautifulSoup(response.text, 'html.parser')
             title = soup.title.string.strip() if soup.title else site['Категория']
             
-            # --- Ищем превью-картинку сайта (og:image) ---
             og_img = soup.find('meta', property='og:image')
             image_url = og_img['content'] if og_img else None
             
             post_text = f"💬 *Обсуждения и практика*\n\n*{title}*\n\n{site['Описание']}\n\n🔗 [Перейти на площадку]({site['Ссылка']})"
             
             if image_url:
-                bot.send_photo(CHANNEL_NAME, photo=image_url, caption=post_text, parse_mode='Markdown')
+                try:
+                    bot.send_photo(CHANNEL_NAME, photo=image_url, caption=post_text, parse_mode='Markdown')
+                    print("✅ Опубликован пост с форума с фото!")
+                except Exception as e:
+                    print(f"⚠️ Ошибка загрузки фото ({e}). Публикую текст.")
+                    bot.send_message(CHANNEL_NAME, text=post_text, parse_mode='Markdown')
             else:
                 bot.send_message(CHANNEL_NAME, text=post_text, parse_mode='Markdown')
-            print("✅ Опубликован пост с форума!")
+                print("✅ Опубликован пост с форума (текст)!")
         except Exception as e:
             print(f"❌ Ошибка базы сайтов: {e}")
 
@@ -93,10 +99,15 @@ def fetch_and_post():
         image_url = doc.get("img")
         
         if image_url:
-            bot.send_photo(CHANNEL_NAME, photo=image_url, caption=post_text, parse_mode='Markdown')
+            try:
+                bot.send_photo(CHANNEL_NAME, photo=image_url, caption=post_text, parse_mode='Markdown')
+                print("✅ Опубликована техкарта с фото!")
+            except Exception as e:
+                print(f"⚠️ Ошибка загрузки фото ({e}). Публикую текст.")
+                bot.send_message(CHANNEL_NAME, text=post_text, parse_mode='Markdown')
         else:
             bot.send_message(CHANNEL_NAME, text=post_text, parse_mode='Markdown')
-        print("✅ Опубликована техкарта по терраццо!")
+            print("✅ Опубликована техкарта (текст)!")
 
 if __name__ == '__main__':
     fetch_and_post()
