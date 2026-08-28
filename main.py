@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 # --- НАСТРОЙКИ ---
 TOKEN = '8043800793:AAG7CPL1aDMxYC9Z0Wr9x92y9h9oqQhsRYY' # Токен бота
 CHANNEL_NEWS = '@highconcrete_news' # Канал для новостей и форумов
-CHANNEL_NORMS = '@highconcrete_library' # ВПИШИ СЮДА @АДРЕС КАНАЛА ДЛЯ ТЕХКАРТ
+CHANNEL_NORMS = '@highconcrete_library' # Канал для техкарт
 GOOGLE_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1Gz9QdwnD4-GJsLr2VqnHawB75TOngXjrJYYKu1XjwEw/export?format=csv'
 # -----------------
 
@@ -20,12 +20,13 @@ def fetch_and_post():
     try:
         response_csv = requests.get(GOOGLE_SHEET_URL)
         response_csv.raise_for_status() 
+        
+        # --- ЖЕЛЕЗОБЕТОННАЯ ЗАЩИТА ОТ НЕВИДИМЫХ СИМВОЛОВ ГУГЛА ---
+        response_csv.encoding = 'utf-8-sig' 
         csv_data = response_csv.text
         
-        # --- ВЫВОДИМ ТО, ЧТО СКАЧАЛ СКРИПТ ---
         print("ОТВЕТ ОТ ГУГЛА (первые 300 символов):")
         print(csv_data[:300])
-        # ------------------------------------
         
         reader = csv.DictReader(io.StringIO(csv_data))
         if reader.fieldnames:
@@ -38,10 +39,11 @@ def fetch_and_post():
         for row in reader:
             content_type = row.get('Тип', '').strip().lower()
             link = row.get('Ссылка', '').strip()
+            region = row.get('Регион', '').strip()
             
             if content_type == 'rss' and link:
                 rss_feeds.append(row)
-            elif content_type == 'форум' and row.get('Регион', '').strip() == 'РФ' and link:
+            elif content_type == 'форум' and region == 'РФ' and link:
                 forums.append(row)
             elif content_type == 'техкарта' and link:
                 tech_docs.append(row)
@@ -49,9 +51,6 @@ def fetch_and_post():
     except Exception as e:
         print(f"❌ Ошибка загрузки таблицы: {e}")
         return
-
-    # (Дальше весь код остается без изменений, начиная с available_categories = [])
-    # ...
 
     available_categories = []
     if rss_feeds: available_categories.append(1)
@@ -64,7 +63,7 @@ def fetch_and_post():
         
     choice = random.choice(available_categories)
     
-    if choice == 1: # НОВОСТИ RSS -> CHANNEL_NEWS
+    if choice == 1: 
         print("Выбрана рубрика: RSS-новости")
         feed_row = random.choice(rss_feeds)
         feed = feedparser.parse(feed_row['Ссылка'])
@@ -95,7 +94,7 @@ def fetch_and_post():
         else:
             bot.send_message(CHANNEL_NEWS, text=post_text, parse_mode='Markdown')
 
-    elif choice == 2: # ФОРУМЫ -> CHANNEL_NEWS
+    elif choice == 2: 
         print("Выбрана рубрика: Форумы")
         site = random.choice(forums)
         headers = {'User-Agent': 'Mozilla/5.0'}
@@ -121,7 +120,7 @@ def fetch_and_post():
         except Exception as e:
             print(f"❌ Ошибка парсинга форума: {e}")
 
-    elif choice == 3: # ТЕХКАРТЫ -> CHANNEL_NORMS
+    elif choice == 3: 
         print("Выбрана рубрика: Техкарты")
         doc = random.choice(tech_docs)
         post_text = f"🔬 *Технологии и рецептуры*\n\n*{doc.get('Название', 'Документация')}*\n\n{doc.get('Описание', '')}\n\n🔗 [Изучить документацию]({doc['Ссылка']})"
