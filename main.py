@@ -3,34 +3,62 @@ import telebot
 import random
 import requests
 import feedparser
+import io
 from bs4 import BeautifulSoup
 
 # --- НАСТРОЙКИ ---
-TOKEN = '8043800793:AAG7CPL1aDMxYC9Z0Wr9x92y9h9oqQhsRYY' # Не забудь вставить свой токен!
+TOKEN = 'ТВОЙ_ТОКЕН_БОТА' # Не забудь токен!
 CHANNEL_NAME = '@highconcrete_news'
+GOOGLE_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1Gz9QdwnD4-GJsLr2VqnHawB75TOngXjrJYYKu1XjwEw/export?format=csv'
 # -----------------
 
 bot = telebot.TeleBot(TOKEN)
 
-RSS_FEEDS = ['https://dwg.ru/rss', 'https://archi.ru/rss/news.xml']
-
-TERRAZZO_DOCS = [
-    {"title": "Рецептуры для столешниц (Direct Cast)", "desc": "Бесплатные рецептуры (объёмные пропорции) с AR-стекловолокном.", "url": "https://concretecountertopinstitute.com/free-training/concrete-countertop-mix-recipes/", "img": "https://stroy-podskazka.ru/images/article/orig/2019/08/izgotovlenie-betonnoj-stoleshnicy-svoimi-rukami-5.jpg"},
-    {"title": "Спецификация NTMA: Epoxy Terrazzo", "desc": "Актуальная спецификация по эпоксидному терраццо. Требования к основанию, пропорции, допуски.", "url": "https://ntma.com/wp-content/uploads/2024/01/Epoxy-Terrazzo-modified-11-20-23.pdf", "img": "https://www.terrazzco.com/wp-content/uploads/2017/04/Epoxy-Terrazzo-Design-1024x682.jpg"},
-    {"title": "Советские стандарты: мозаичные покрытия", "desc": "ТТК на мозаичное покрытие: состав смеси, укладка, уход.", "url": "https://www.zavodsz.ru/files/gost/TTK_%20Proizvodstvo%20rabot%20po%20ustrojstvu%20mozaichnogo%20pokrytiya%20pola.pdf", "img": "https://pol-master.com/wp-content/uploads/2014/11/mozaichnyj-betonnyj-pol.jpg"},
-    {"title": "Технология GFRC для тонкостенных изделий", "desc": "GFRC-рецептура для раковин и мебели. Бэкерный слой 10–12 мм.", "url": "https://www.expressions-ltd.com/pages/gfrc-mix-recipe", "img": "https://cdn.shopify.com/s/files/1/1393/7797/files/GFRC_1024x1024.jpg"}
-]
-
 def fetch_and_post():
-    content_type = random.choice([1, 2, 3])
+    print("Скачиваю единую базу из Google Таблицы...")
+    try:
+        response_csv = requests.get(GOOGLE_SHEET_URL)
+        response_csv.raise_for_status() 
+        csv_data = response_csv.text
+        reader = csv.DictReader(io.StringIO(csv_data))
+        
+        rss_feeds = []
+        forums = []
+        tech_docs = []
+        
+        # Сортируем данные из таблицы по спискам
+        for row in reader:
+            content_type = row.get('Тип', '').strip().lower()
+            if content_type == 'rss' and row.get('Ссылка'):
+                rss_feeds.append(row)
+            elif content_type == 'форум' and row.get('Регион') == 'РФ' and row.get('Ссылка'):
+                forums.append(row)
+            elif content_type == 'техкарта' and row.get('Ссылка'):
+                tech_docs.append(row)
+                
+    except Exception as e:
+        print(f"❌ Ошибка загрузки таблицы: {e}")
+        return
+
+    # Выбираем случайную рубрику из тех, что не пустые
+    available_categories = []
+    if rss_feeds: available_categories.append(1)
+    if forums: available_categories.append(2)
+    if tech_docs: available_categories.append(3)
     
-    if content_type == 1:
-        print("Пытаюсь взять новость из RSS...")
-        feed_url = random.choice(RSS_FEEDS)
-        feed = feedparser.parse(feed_url)
+    if not available_categories:
+        print("❌ В таблице нет данных для публикации!")
+        return
+        
+    choice = random.choice(available_categories)
+    
+    if choice == 1: # НОВОСТИ RSS
+        print("Выбрана рубрика: RSS-новости")
+        feed_row = random.choice(rss_feeds)
+        feed = feedparser.parse(feed_row['Ссылка'])
         
         if not feed.entries:
-            print(f"❌ RSS-лента {feed_url} пуста. Отмена.")
+            print(f"❌ Лента {feed_row['Ссылка']} пуста.")
             return
             
         entry = feed.entries[0]
@@ -43,67 +71,55 @@ def fetch_and_post():
                     break
         if not image_url and 'media_thumbnail' in entry and entry.media_thumbnail:
              image_url = entry.media_thumbnail[0]['url']
-        
-        post_text = f"🏗 *Индустрия и тренды*\n\n*{entry.title}*\n\nСвежие сводки с рынка проектирования и архитектуры.\n\n🔗 [Читать источник]({entry.link})"
+             
+        post_text = f"🏗 *Индустрия и тренды*\n\n*{entry.title}*\n\nСвежие сводки с рынка проектирования.\n\n🔗 [Читать источник]({entry.link})"
         
         if image_url:
             try:
                 bot.send_photo(CHANNEL_NAME, photo=image_url, caption=post_text, parse_mode='Markdown')
                 print("✅ Опубликована новость с фото!")
-            except Exception as e:
-                print(f"⚠️ Ошибка загрузки фото ({e}). Публикую текст.")
+            except:
                 bot.send_message(CHANNEL_NAME, text=post_text, parse_mode='Markdown')
         else:
             bot.send_message(CHANNEL_NAME, text=post_text, parse_mode='Markdown')
-            print("✅ Опубликована новость (текст)!")
 
-    elif content_type == 2:
+    elif choice == 2: # ФОРУМЫ
+        print("Выбрана рубрика: Форумы")
+        site = random.choice(forums)
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        
         try:
-            ru_sites = []
-            with open('sites.csv', mode='r', encoding='utf-8') as file:
-                reader = csv.DictReader(file)
-                for row in reader:
-                    if row['Регион'] == 'РФ':
-                        ru_sites.append(row)
-            
-            if not ru_sites:
-                return
-
-            site = random.choice(ru_sites)
-            headers = {'User-Agent': 'Mozilla/5.0'}
             response = requests.get(site['Ссылка'], headers=headers, timeout=10)
             soup = BeautifulSoup(response.text, 'html.parser')
-            title = soup.title.string.strip() if soup.title else site['Категория']
+            title = soup.title.string.strip() if soup.title and soup.title.string else site.get('Название', 'Форум')
             
             og_img = soup.find('meta', property='og:image')
             image_url = og_img['content'] if og_img else None
             
-            post_text = f"💬 *Обсуждения и практика*\n\n*{title}*\n\n{site['Описание']}\n\n🔗 [Перейти на площадку]({site['Ссылка']})"
+            post_text = f"💬 *Обсуждения и практика*\n\n*{title}*\n\n{site.get('Описание', '')}\n\n🔗 [Перейти на площадку]({site['Ссылка']})"
             
             if image_url:
                 try:
                     bot.send_photo(CHANNEL_NAME, photo=image_url, caption=post_text, parse_mode='Markdown')
                     print("✅ Опубликован пост с форума с фото!")
-                except Exception as e:
-                    print(f"⚠️ Ошибка загрузки фото ({e}). Публикую текст.")
+                except:
                     bot.send_message(CHANNEL_NAME, text=post_text, parse_mode='Markdown')
             else:
                 bot.send_message(CHANNEL_NAME, text=post_text, parse_mode='Markdown')
-                print("✅ Опубликован пост с форума (текст)!")
         except Exception as e:
-            print(f"❌ Ошибка базы сайтов: {e}")
+            print(f"❌ Ошибка парсинга форума: {e}")
 
-    elif content_type == 3:
-        doc = random.choice(TERRAZZO_DOCS)
-        post_text = f"🔬 *Технологии и рецептуры*\n\n*{doc['title']}*\n\n{doc['desc']}\n\n🔗 [Изучить документацию]({doc['url']})"
-        image_url = doc.get("img")
+    elif choice == 3: # ТЕХКАРТЫ И ДОКУМЕНТАЦИЯ
+        print("Выбрана рубрика: Техкарты")
+        doc = random.choice(tech_docs)
+        post_text = f"🔬 *Технологии и рецептуры*\n\n*{doc.get('Название', 'Документация')}*\n\n{doc.get('Описание', '')}\n\n🔗 [Изучить документацию]({doc['Ссылка']})"
+        image_url = doc.get('Фото', '').strip()
         
         if image_url:
             try:
                 bot.send_photo(CHANNEL_NAME, photo=image_url, caption=post_text, parse_mode='Markdown')
                 print("✅ Опубликована техкарта с фото!")
-            except Exception as e:
-                print(f"⚠️ Ошибка загрузки фото ({e}). Публикую текст.")
+            except:
                 bot.send_message(CHANNEL_NAME, text=post_text, parse_mode='Markdown')
         else:
             bot.send_message(CHANNEL_NAME, text=post_text, parse_mode='Markdown')
