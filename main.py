@@ -21,9 +21,13 @@ def fetch_and_post():
         response_csv = requests.get(GOOGLE_SHEET_URL)
         response_csv.raise_for_status() 
         csv_data = response_csv.text
-        reader = csv.DictReader(io.StringIO(csv_data))
         
-        # --- ТОТ САМЫЙ ПРЕДОХРАНИТЕЛЬ ОТ ПРОБЕЛОВ ---
+        # --- ВЫВОДИМ ТО, ЧТО СКАЧАЛ СКРИПТ ---
+        print("ОТВЕТ ОТ ГУГЛА (первые 300 символов):")
+        print(csv_data[:300])
+        # ------------------------------------
+        
+        reader = csv.DictReader(io.StringIO(csv_data))
         if reader.fieldnames:
             reader.fieldnames = [str(col).strip() for col in reader.fieldnames]
             
