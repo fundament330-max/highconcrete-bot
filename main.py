@@ -7,8 +7,9 @@ import io
 from bs4 import BeautifulSoup
 
 # --- НАСТРОЙКИ ---
-TOKEN = 'ТВОЙ_ТОКЕН_БОТА' # Не забудь токен!
-CHANNEL_NAME = '@highconcrete_news'
+TOKEN = '8043800793:AAG7CPL1aDMxYC9Z0Wr9x92y9h9oqQhsRYY' # Токен бота
+CHANNEL_NEWS = '@highconcrete_news' # Канал для новостей и форумов
+CHANNEL_NORMS = '@твой_канал_для_норм' # ВПИШИ СЮДА @АДРЕС КАНАЛА ДЛЯ ТЕХКАРТ
 GOOGLE_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1Gz9QdwnD4-GJsLr2VqnHawB75TOngXjrJYYKu1XjwEw/export?format=csv'
 # -----------------
 
@@ -26,7 +27,6 @@ def fetch_and_post():
         forums = []
         tech_docs = []
         
-        # Сортируем данные из таблицы по спискам
         for row in reader:
             content_type = row.get('Тип', '').strip().lower()
             if content_type == 'rss' and row.get('Ссылка'):
@@ -40,7 +40,6 @@ def fetch_and_post():
         print(f"❌ Ошибка загрузки таблицы: {e}")
         return
 
-    # Выбираем случайную рубрику из тех, что не пустые
     available_categories = []
     if rss_feeds: available_categories.append(1)
     if forums: available_categories.append(2)
@@ -52,7 +51,7 @@ def fetch_and_post():
         
     choice = random.choice(available_categories)
     
-    if choice == 1: # НОВОСТИ RSS
+    if choice == 1: # НОВОСТИ RSS -> CHANNEL_NEWS
         print("Выбрана рубрика: RSS-новости")
         feed_row = random.choice(rss_feeds)
         feed = feedparser.parse(feed_row['Ссылка'])
@@ -76,14 +75,14 @@ def fetch_and_post():
         
         if image_url:
             try:
-                bot.send_photo(CHANNEL_NAME, photo=image_url, caption=post_text, parse_mode='Markdown')
+                bot.send_photo(CHANNEL_NEWS, photo=image_url, caption=post_text, parse_mode='Markdown')
                 print("✅ Опубликована новость с фото!")
             except:
-                bot.send_message(CHANNEL_NAME, text=post_text, parse_mode='Markdown')
+                bot.send_message(CHANNEL_NEWS, text=post_text, parse_mode='Markdown')
         else:
-            bot.send_message(CHANNEL_NAME, text=post_text, parse_mode='Markdown')
+            bot.send_message(CHANNEL_NEWS, text=post_text, parse_mode='Markdown')
 
-    elif choice == 2: # ФОРУМЫ
+    elif choice == 2: # ФОРУМЫ -> CHANNEL_NEWS
         print("Выбрана рубрика: Форумы")
         site = random.choice(forums)
         headers = {'User-Agent': 'Mozilla/5.0'}
@@ -100,16 +99,16 @@ def fetch_and_post():
             
             if image_url:
                 try:
-                    bot.send_photo(CHANNEL_NAME, photo=image_url, caption=post_text, parse_mode='Markdown')
+                    bot.send_photo(CHANNEL_NEWS, photo=image_url, caption=post_text, parse_mode='Markdown')
                     print("✅ Опубликован пост с форума с фото!")
                 except:
-                    bot.send_message(CHANNEL_NAME, text=post_text, parse_mode='Markdown')
+                    bot.send_message(CHANNEL_NEWS, text=post_text, parse_mode='Markdown')
             else:
-                bot.send_message(CHANNEL_NAME, text=post_text, parse_mode='Markdown')
+                bot.send_message(CHANNEL_NEWS, text=post_text, parse_mode='Markdown')
         except Exception as e:
             print(f"❌ Ошибка парсинга форума: {e}")
 
-    elif choice == 3: # ТЕХКАРТЫ И ДОКУМЕНТАЦИЯ
+    elif choice == 3: # ТЕХКАРТЫ -> CHANNEL_NORMS
         print("Выбрана рубрика: Техкарты")
         doc = random.choice(tech_docs)
         post_text = f"🔬 *Технологии и рецептуры*\n\n*{doc.get('Название', 'Документация')}*\n\n{doc.get('Описание', '')}\n\n🔗 [Изучить документацию]({doc['Ссылка']})"
@@ -117,12 +116,12 @@ def fetch_and_post():
         
         if image_url:
             try:
-                bot.send_photo(CHANNEL_NAME, photo=image_url, caption=post_text, parse_mode='Markdown')
+                bot.send_photo(CHANNEL_NORMS, photo=image_url, caption=post_text, parse_mode='Markdown')
                 print("✅ Опубликована техкарта с фото!")
             except:
-                bot.send_message(CHANNEL_NAME, text=post_text, parse_mode='Markdown')
+                bot.send_message(CHANNEL_NORMS, text=post_text, parse_mode='Markdown')
         else:
-            bot.send_message(CHANNEL_NAME, text=post_text, parse_mode='Markdown')
+            bot.send_message(CHANNEL_NORMS, text=post_text, parse_mode='Markdown')
             print("✅ Опубликована техкарта (текст)!")
 
 if __name__ == '__main__':
