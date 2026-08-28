@@ -23,22 +23,31 @@ def fetch_and_post():
         csv_data = response_csv.text
         reader = csv.DictReader(io.StringIO(csv_data))
         
+        # --- ТОТ САМЫЙ ПРЕДОХРАНИТЕЛЬ ОТ ПРОБЕЛОВ ---
+        if reader.fieldnames:
+            reader.fieldnames = [str(col).strip() for col in reader.fieldnames]
+            
         rss_feeds = []
         forums = []
         tech_docs = []
         
         for row in reader:
             content_type = row.get('Тип', '').strip().lower()
-            if content_type == 'rss' and row.get('Ссылка'):
+            link = row.get('Ссылка', '').strip()
+            
+            if content_type == 'rss' and link:
                 rss_feeds.append(row)
-            elif content_type == 'форум' and row.get('Регион') == 'РФ' and row.get('Ссылка'):
+            elif content_type == 'форум' and row.get('Регион', '').strip() == 'РФ' and link:
                 forums.append(row)
-            elif content_type == 'техкарта' and row.get('Ссылка'):
+            elif content_type == 'техкарта' and link:
                 tech_docs.append(row)
                 
     except Exception as e:
         print(f"❌ Ошибка загрузки таблицы: {e}")
         return
+
+    # (Дальше весь код остается без изменений, начиная с available_categories = [])
+    # ...
 
     available_categories = []
     if rss_feeds: available_categories.append(1)
