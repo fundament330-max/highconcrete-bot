@@ -4,37 +4,44 @@ import random
 import requests
 import feedparser
 import io
+import os
 from bs4 import BeautifulSoup
 
 # --- НАСТРОЙКИ ---
-TOKEN = '8043800793:AAG7CPL1aDMxYC9Z0Wr9x92y9h9oqQhsRYY' # Токен бота
-CHANNEL_NEWS = '@highconcrete_news' # Канал для новостей и форумов
-CHANNEL_NORMS = '@highconcrete_library' # Канал для техкарт
+TOKEN = '8043800793:AAG7CPL1aDMxYC9Z0Wr9x92y9h9oqQhsRYY' 
+CHANNEL_NEWS = '@highconcrete_news'
+CHANNEL_NORMS = '@highconcrete_library'
 GOOGLE_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1Gz9QdwnD4-GJsLr2VqnHawB75TOngXjrJYYKu1XjwEw/export?format=csv'
+HISTORY_FILE = 'posted_urls.txt'
 # -----------------
 
 bot = telebot.TeleBot(TOKEN)
 
+def load_history():
+    if os.path.exists(HISTORY_FILE):
+        with open(HISTORY_FILE, 'r', encoding='utf-8') as f:
+            return set(f.read().splitlines())
+    return set()
+
+def save_history(url):
+    with open(HISTORY_FILE, 'a', encoding='utf-8') as f:
+        f.write(f"{url}\n")
+
 def fetch_and_post():
-    print("Скачиваю единую базу из Google Таблицы...")
+    history = load_history()
+    print("Скачиваю базу... В памяти записей:", len(history))
+    
     try:
         response_csv = requests.get(GOOGLE_SHEET_URL)
         response_csv.raise_for_status() 
-        
-        # --- ЖЕЛЕЗОБЕТОННАЯ ЗАЩИТА ОТ НЕВИДИМЫХ СИМВОЛОВ ГУГЛА ---
         response_csv.encoding = 'utf-8-sig' 
         csv_data = response_csv.text
-        
-        print("ОТВЕТ ОТ ГУГЛА (первые 300 символов):")
-        print(csv_data[:300])
         
         reader = csv.DictReader(io.StringIO(csv_data))
         if reader.fieldnames:
             reader.fieldnames = [str(col).strip() for col in reader.fieldnames]
             
-        rss_feeds = []
-        forums = []
-        tech_docs = []
+        rss_feeds, forums, tech_docs = [], [], []
         
         for row in reader:
             content_type = row.get('Тип', '').strip().lower()
@@ -43,9 +50,10 @@ def fetch_and_post():
             
             if content_type == 'rss' and link:
                 rss_feeds.append(row)
-            elif content_type == 'форум' and region == 'РФ' and link:
+            # Форумы и техкарты фильтруем от повторов прямо здесь
+            elif content_type == 'форум' and region == 'РФ' and link and link not in history:
                 forums.append(row)
-            elif content_type == 'техкарта' and link:
+            elif content_type == 'техкарта' and link and link not in history:
                 tech_docs.append(row)
                 
     except Exception as e:
@@ -58,22 +66,27 @@ def fetch_and_post():
     if tech_docs: available_categories.append(3)
     
     if not available_categories:
-        print("❌ В таблице нет данных для публикации!")
+        print("❌ Нет новых уникальных материалов для публикации!")
         return
         
     choice = random.choice(available_categories)
     
     if choice == 1: 
-        print("Выбрана рубрика: RSS-новости")
+        print("Рубрика: RSS")
         feed_row = random.choice(rss_feeds)
         feed = feedparser.parse(feed_row['Ссылка'])
         
-        if not feed.entries:
-            print(f"❌ Лента {feed_row['Ссылка']} пуста.")
+        # Ищем первую новость в ленте, которой еще не было в нашей истории
+        entry = None
+        for item in feed.entries:
+            if item.link not in history:
+                entry = item
+                break
+                
+        if not entry:
+            print("❌ В этой RSS-ленте нет свежих новостей.")
             return
             
-        entry = feed.entries[0]
-        
         image_url = None
         if 'enclosures' in entry and entry.enclosures:
             for enc in entry.enclosures:
@@ -85,22 +98,27 @@ def fetch_and_post():
              
         post_text = f"🏗 *Индустрия и тренды*\n\n*{entry.title}*\n\nСвежие сводки с рынка проектирования.\n\n🔗 [Читать источник]({entry.link})"
         
-        if image_url:
-            try:
-                bot.send_photo(CHANNEL_NEWS, photo=image_url, caption=post_text, parse_mode='Markdown')
-                print("✅ Опубликована новость с фото!")
-            except:
-                bot.send_message(CHANNEL_NEWS, text=post_text, parse_mode='Markdown')
-        else:
-            bot.send_message(CHANNEL_NEWS, text=post_text, parse_mode='Markdown')
+        try:
+            if image_url: bot.send_photo(CHANNEL_NEWS, photo=image_url, caption=post_text, parse_mode='Markdown')
+            else: bot.send_message(CHANNEL_NEWS, text=post_text, parse_mode='Markdown')
+            save_history(entry.link)
+            print("✅ Опубликована новость!")
+        except Exception as e:
+            print("❌ Ошибка отправки:", e)
 
     elif choice == 2: 
-        print("Выбрана рубрика: Форумы")
+        print("Рубрика: Форумы")
         site = random.choice(forums)
         headers = {'User-Agent': 'Mozilla/5.0'}
         
         try:
             response = requests.get(site['Ссылка'], headers=headers, timeout=10)
+            # ПРОВЕРКА НА 404 И ДРУГИЕ ОШИБКИ
+            if response.status_code >= 400:
+                print(f"❌ Битая ссылка ({response.status_code}): {site['Ссылка']}")
+                save_history(site['Ссылка']) # Записываем битую ссылку в историю, чтобы больше ее не трогать
+                return
+                
             soup = BeautifulSoup(response.text, 'html.parser')
             title = soup.title.string.strip() if soup.title and soup.title.string else site.get('Название', 'Форум')
             
@@ -110,31 +128,41 @@ def fetch_and_post():
             post_text = f"💬 *Обсуждения и практика*\n\n*{title}*\n\n{site.get('Описание', '')}\n\n🔗 [Перейти на площадку]({site['Ссылка']})"
             
             if image_url:
-                try:
-                    bot.send_photo(CHANNEL_NEWS, photo=image_url, caption=post_text, parse_mode='Markdown')
-                    print("✅ Опубликован пост с форума с фото!")
-                except:
-                    bot.send_message(CHANNEL_NEWS, text=post_text, parse_mode='Markdown')
+                try: bot.send_photo(CHANNEL_NEWS, photo=image_url, caption=post_text, parse_mode='Markdown')
+                except: bot.send_message(CHANNEL_NEWS, text=post_text, parse_mode='Markdown')
             else:
                 bot.send_message(CHANNEL_NEWS, text=post_text, parse_mode='Markdown')
+                
+            save_history(site['Ссылка'])
+            print("✅ Опубликован пост с форума!")
         except Exception as e:
             print(f"❌ Ошибка парсинга форума: {e}")
+            save_history(site['Ссылка'])
 
     elif choice == 3: 
-        print("Выбрана рубрика: Техкарты")
+        print("Рубрика: Техкарты")
         doc = random.choice(tech_docs)
+        
+        # Легкая проверка ссылки для техкарт
+        try:
+            check = requests.head(doc['Ссылка'], headers={'User-Agent': 'Mozilla/5.0'}, timeout=5, allow_redirects=True)
+            if check.status_code >= 400 and check.status_code != 405:
+                print(f"❌ Битая ссылка ({check.status_code}): {doc['Ссылка']}")
+                save_history(doc['Ссылка'])
+                return
+        except:
+            pass
+
         post_text = f"🔬 *Технологии и рецептуры*\n\n*{doc.get('Название', 'Документация')}*\n\n{doc.get('Описание', '')}\n\n🔗 [Изучить документацию]({doc['Ссылка']})"
         image_url = doc.get('Фото', '').strip()
         
-        if image_url:
-            try:
-                bot.send_photo(CHANNEL_NORMS, photo=image_url, caption=post_text, parse_mode='Markdown')
-                print("✅ Опубликована техкарта с фото!")
-            except:
-                bot.send_message(CHANNEL_NORMS, text=post_text, parse_mode='Markdown')
-        else:
-            bot.send_message(CHANNEL_NORMS, text=post_text, parse_mode='Markdown')
-            print("✅ Опубликована техкарта (текст)!")
+        try:
+            if image_url: bot.send_photo(CHANNEL_NORMS, photo=image_url, caption=post_text, parse_mode='Markdown')
+            else: bot.send_message(CHANNEL_NORMS, text=post_text, parse_mode='Markdown')
+            save_history(doc['Ссылка'])
+            print("✅ Опубликована техкарта!")
+        except Exception as e:
+            print("❌ Ошибка отправки техкарты:", e)
 
 if __name__ == '__main__':
     fetch_and_post()
