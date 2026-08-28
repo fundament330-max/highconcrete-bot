@@ -23,7 +23,7 @@ jobs:
           
       - name: Run script
         run: python main.py
-- name: Save memory (Commit posted urls)
+      - name: Save memory (Commit posted urls)
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
