@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 # --- НАСТРОЙКИ ---
 TOKEN = '8043800793:AAG7CPL1aDMxYC9Z0Wr9x92y9h9oqQhsRYY' # Токен бота
 CHANNEL_NEWS = '@highconcrete_news' # Канал для новостей и форумов
-CHANNEL_NORMS = '@твой_канал_для_норм' # ВПИШИ СЮДА @АДРЕС КАНАЛА ДЛЯ ТЕХКАРТ
+CHANNEL_NORMS = '@highconcrete_library' # ВПИШИ СЮДА @АДРЕС КАНАЛА ДЛЯ ТЕХКАРТ
 GOOGLE_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1Gz9QdwnD4-GJsLr2VqnHawB75TOngXjrJYYKu1XjwEw/export?format=csv'
 # -----------------
 
