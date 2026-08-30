@@ -19,10 +19,11 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pyTelegramBotAPI beautifulsoup4 requests feedparser
+          pip install pyTelegramBotAPI beautifulsoup4 requests feedparser deep-translator
           
       - name: Run script
         run: python main.py
+
       - name: Save memory (Commit posted urls)
         run: |
           git config --local user.email "action@github.com"
