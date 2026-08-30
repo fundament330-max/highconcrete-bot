@@ -5,7 +5,9 @@ import requests
 import feedparser
 import io
 import os
+import time
 from bs4 import BeautifulSoup
+from deep_translator import GoogleTranslator
 
 # --- НАСТРОЙКИ ---
 TOKEN = '8043800793:AAG7CPL1aDMxYC9Z0Wr9x92y9h9oqQhsRYY' 
@@ -16,6 +18,15 @@ HISTORY_FILE = 'posted_urls.txt'
 # -----------------
 
 bot = telebot.TeleBot(TOKEN)
+
+def translate_to_ru(text):
+    if not text: 
+        return ""
+    try:
+        return GoogleTranslator(source='auto', target='ru').translate(text)
+    except Exception as e:
+        print(f"Ошибка перевода: {e}")
+        return text
 
 def load_history():
     if os.path.exists(HISTORY_FILE):
@@ -29,7 +40,7 @@ def save_history(url):
 
 def fetch_and_post():
     history = load_history()
-    print("Скачиваю базу... В памяти записей:", len(history))
+    print(f"Скачиваю базу... В памяти записей: {len(history)}")
     
     try:
         response_csv = requests.get(GOOGLE_SHEET_URL)
@@ -46,12 +57,10 @@ def fetch_and_post():
         for row in reader:
             content_type = row.get('Тип', '').strip().lower()
             link = row.get('Ссылка', '').strip()
-            region = row.get('Регион', '').strip()
             
             if content_type == 'rss' and link:
                 rss_feeds.append(row)
-            # Форумы и техкарты фильтруем от повторов прямо здесь
-            elif content_type == 'форум' and region == 'РФ' and link and link not in history:
+            elif content_type == 'форум' and link and link not in history:
                 forums.append(row)
             elif content_type == 'техкарта' and link and link not in history:
                 tech_docs.append(row)
@@ -60,23 +69,51 @@ def fetch_and_post():
         print(f"❌ Ошибка загрузки таблицы: {e}")
         return
 
+    # --- 1. ПРИОРИТЕТНАЯ ОБРАБОТКА ТЕХКАРТ (БЕЗ РУЛЕТКИ) ---
+    if tech_docs:
+        print(f"Найдено новых техкарт: {len(tech_docs)}. Отправляем в архив...")
+        for doc in tech_docs:
+            try:
+                check = requests.head(doc['Ссылка'], headers={'User-Agent': 'Mozilla/5.0'}, timeout=5, allow_redirects=True)
+                if check.status_code >= 400 and check.status_code != 405:
+                    print(f"❌ Битая ссылка ({check.status_code}): {doc['Ссылка']}")
+                    save_history(doc['Ссылка'])
+                    continue
+            except:
+                pass
+
+            ru_title = translate_to_ru(doc.get('Название', 'Документация'))
+            ru_desc = translate_to_ru(doc.get('Описание', ''))
+            post_text = f"*{ru_title}*\n{ru_desc}\n{doc['Ссылка']}"
+            image_url = doc.get('Фото', '').strip()
+            
+            try:
+                if image_url: 
+                    bot.send_photo(CHANNEL_NORMS, photo=image_url, caption=post_text, parse_mode='Markdown')
+                else: 
+                    bot.send_message(CHANNEL_NORMS, text=post_text, parse_mode='Markdown')
+                save_history(doc['Ссылка'])
+                print(f"✅ Техкарта сохранена в базу: {ru_title}")
+                time.sleep(2) # Пауза, чтобы Телеграм не заблокировал за спам
+            except Exception as e:
+                print("❌ Ошибка сохранения техкарты:", e)
+
+    # --- 2. РУЛЕТКА ДЛЯ НОВОСТЕЙ И ФОРУМОВ ---
     available_categories = []
     if rss_feeds: available_categories.append(1)
     if forums: available_categories.append(2)
-    if tech_docs: available_categories.append(3)
     
     if not available_categories:
-        print("❌ Нет новых уникальных материалов для публикации!")
+        print("❌ Нет новых материалов для новостного канала!")
         return
         
     choice = random.choice(available_categories)
     
     if choice == 1: 
-        print("Рубрика: RSS")
+        print("Рубрика новостей: RSS")
         feed_row = random.choice(rss_feeds)
         feed = feedparser.parse(feed_row['Ссылка'])
         
-        # Ищем первую новость в ленте, которой еще не было в нашей истории
         entry = None
         for item in feed.entries:
             if item.link not in history:
@@ -84,7 +121,7 @@ def fetch_and_post():
                 break
                 
         if not entry:
-            print("❌ В этой RSS-ленте нет свежих новостей.")
+            print(f"❌ В этой RSS-ленте нет свежих новостей.")
             return
             
         image_url = None
@@ -96,7 +133,8 @@ def fetch_and_post():
         if not image_url and 'media_thumbnail' in entry and entry.media_thumbnail:
              image_url = entry.media_thumbnail[0]['url']
              
-        post_text = f"🏗 *Индустрия и тренды*\n\n*{entry.title}*\n\nСвежие сводки с рынка проектирования.\n\n🔗 [Читать источник]({entry.link})"
+        ru_title = translate_to_ru(entry.title)
+        post_text = f"🏗 *Индустрия и тренды*\n\n*{ru_title}*\n\nСвежие сводки с рынка.\n\n🔗 [Читать источник]({entry.link})"
         
         try:
             if image_url: bot.send_photo(CHANNEL_NEWS, photo=image_url, caption=post_text, parse_mode='Markdown')
@@ -107,16 +145,15 @@ def fetch_and_post():
             print("❌ Ошибка отправки:", e)
 
     elif choice == 2: 
-        print("Рубрика: Форумы")
+        print("Рубрика новостей: Форумы")
         site = random.choice(forums)
         headers = {'User-Agent': 'Mozilla/5.0'}
         
         try:
             response = requests.get(site['Ссылка'], headers=headers, timeout=10)
-            # ПРОВЕРКА НА 404 И ДРУГИЕ ОШИБКИ
             if response.status_code >= 400:
                 print(f"❌ Битая ссылка ({response.status_code}): {site['Ссылка']}")
-                save_history(site['Ссылка']) # Записываем битую ссылку в историю, чтобы больше ее не трогать
+                save_history(site['Ссылка']) 
                 return
                 
             soup = BeautifulSoup(response.text, 'html.parser')
@@ -125,7 +162,10 @@ def fetch_and_post():
             og_img = soup.find('meta', property='og:image')
             image_url = og_img['content'] if og_img else None
             
-            post_text = f"💬 *Обсуждения и практика*\n\n*{title}*\n\n{site.get('Описание', '')}\n\n🔗 [Перейти на площадку]({site['Ссылка']})"
+            ru_title = translate_to_ru(title)
+            ru_desc = translate_to_ru(site.get('Описание', ''))
+            
+            post_text = f"💬 *Обсуждения и практика*\n\n*{ru_title}*\n\n{ru_desc}\n\n🔗 [Перейти на площадку]({site['Ссылка']})"
             
             if image_url:
                 try: bot.send_photo(CHANNEL_NEWS, photo=image_url, caption=post_text, parse_mode='Markdown')
@@ -138,31 +178,6 @@ def fetch_and_post():
         except Exception as e:
             print(f"❌ Ошибка парсинга форума: {e}")
             save_history(site['Ссылка'])
-
-    elif choice == 3: 
-        print("Рубрика: Техкарты")
-        doc = random.choice(tech_docs)
-        
-        # Легкая проверка ссылки для техкарт
-        try:
-            check = requests.head(doc['Ссылка'], headers={'User-Agent': 'Mozilla/5.0'}, timeout=5, allow_redirects=True)
-            if check.status_code >= 400 and check.status_code != 405:
-                print(f"❌ Битая ссылка ({check.status_code}): {doc['Ссылка']}")
-                save_history(doc['Ссылка'])
-                return
-        except:
-            pass
-
-        post_text = f"🔬 *Технологии и рецептуры*\n\n*{doc.get('Название', 'Документация')}*\n\n{doc.get('Описание', '')}\n\n🔗 [Изучить документацию]({doc['Ссылка']})"
-        image_url = doc.get('Фото', '').strip()
-        
-        try:
-            if image_url: bot.send_photo(CHANNEL_NORMS, photo=image_url, caption=post_text, parse_mode='Markdown')
-            else: bot.send_message(CHANNEL_NORMS, text=post_text, parse_mode='Markdown')
-            save_history(doc['Ссылка'])
-            print("✅ Опубликована техкарта!")
-        except Exception as e:
-            print("❌ Ошибка отправки техкарты:", e)
 
 if __name__ == '__main__':
     fetch_and_post()
