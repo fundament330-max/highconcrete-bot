@@ -94,7 +94,7 @@ def fetch_and_post():
                     bot.send_message(CHANNEL_NORMS, text=post_text, parse_mode='Markdown')
                 save_history(doc['Ссылка'])
                 print(f"✅ Техкарта сохранена в базу: {ru_title}")
-                time.sleep(2) # Пауза, чтобы Телеграм не заблокировал за спам
+                time.sleep(2)
             except Exception as e:
                 print("❌ Ошибка сохранения техкарты:", e)
 
